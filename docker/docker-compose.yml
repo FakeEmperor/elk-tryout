@@ -1,0 +1,12 @@
+version: '2'
+services:
+    filebeat:
+        build: .
+        image: c1c42dc9fc45
+        volumes:
+            - ./log/nginx:/etc/logs/nginx # логи nginx
+            - ./filebeat:/etc/filebeat
+            - ./filebeat/tmp:/tmp/filebeat
+    nginx:
+        build: .
+        image:  

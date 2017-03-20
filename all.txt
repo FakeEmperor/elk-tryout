@@ -1,0 +1,64 @@
+
+source s_websphere  {
+   file("/var/log/messages");
+};
+destination d_websphere {
+   udp(ip(10.0.2.4) port(514));
+   file("/var/log/websphere.debug.log" fsync(yes));
+};
+log { source(s_websphere); destination(d_websphere);};
+version: '2'
+services:
+    syslog-ng:
+        build: .
+        image: [imageId]
+        volumes:
+            - ./syslog-ng_config:/etc/syslog-ng
+            - ./var/log:/var/log
+        ports:
+            - "514:514" #udp
+            - "601:601" #tcp
+        links:
+            - "elk"
+        depends_on:
+            - "elk"
+    elk:
+        image: [imageId]
+        volumes:
+            - ./logstash_config:/etc/logstash/conf.d
+            - ./var/log:/var/log
+        ports:
+            - "5601:5601" #kibana
+            - "9200:9200" #elastic
+            - "5044:5044" #logstash
+source s_remote {
+    udp(ip(0.0.0.0) port(514));
+    tcp(ip(0.0.0.0) port(514));
+}
+destination d_logstash  {
+    file("/var/log/logstash/$HOST.log" fsync(yes) perm(0644));
+}
+log { source(s_remote); destination(d_logstash); };
+input {
+  file {
+    type => "syslog"
+    path => [ "/var/log/logstash/*.log"]
+  }
+}
+output {
+   stdout { debug => true debug_format => "json"}
+   elasticsearch { embedded => true }
+}
+filter {
+  if [type] == "syslog" {
+    grok {
+      match => [ "message", "<%{POSINT:syslog_pri}>%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}" ]
+    }
+  }
+}
+output {
+  if [type] == "syslog" and "_grokparsefailure" in [tags] {
+    file { path => "/var/log/failed_syslog_events-%{+YYYY-MM-dd}" }
+  }
+}
+
